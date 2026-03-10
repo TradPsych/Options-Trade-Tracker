@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Trade Analysis</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <style>
+    :root {
+      --bg:#F5F4F0; --surface:#ECEAE3; --steel:#3A6186; --steel-dark:#2B4A66;
+      --steel-light:#5B82A6; --profit:#1E7D4B; --profit-bg:#E8F5EE;
+      --loss:#C0392B; --loss-bg:#FDECEA; --neutral:#6B6B6B;
+      --text:#1A1A2E; --border:#D4D0C8; --shadow:0 2px 16px rgba(58,97,134,0.10);
+    }
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
+    header{background:var(--steel);padding:28px 40px 24px;display:flex;align-items:flex-end;justify-content:space-between;border-bottom:3px solid var(--steel-dark);}
+    header h1{font-family:'Syne',sans-serif;font-size:1.9rem;font-weight:800;color:#fff;letter-spacing:-0.5px;}
+    header p{font-size:0.78rem;color:rgba(255,255,255,0.65);font-family:'DM Mono',monospace;margin-top:4px;}
+    #loader{display:flex;flex-direction:column;align-items:center;justify-content:center;height:60vh;gap:16px;}
+    .spinner{width:40px;height:40px;border:3px solid var(--border);border-top-color:var(--steel);border-radius:50%;animation:spin 0.8s linear infinite;}
+    @keyframes spin{to{transform:rotate(360deg);}}
+    main{padding:32px 40px 60px;max-width:100%;margin:0 auto;}
+    .charts-grid{display:grid;grid-template-columns:1fr 1fr;gap:28px;margin-bottom:28px;}
+    .chart-full{grid-column:1/-1;}
+    .chart-card{background:#fff;border:1px solid var(--border);border-radius:12px;padding:24px;box-shadow:var(--shadow);}
+    .chart-title{font-family:'Syne',sans-serif;font-size:1rem;font-weight:700;color:var(--steel-dark);margin-bottom:4px;}
+    .chart-sub{font-size:0.72rem;color:var(--neutral);font-family:'DM Mono',monospace;margin-bottom:20px;}
+    .chart-wrap{position:relative;height:300px;}
+    .chart-wrap-tall{position:relative;height:260px;}
+    footer{text-align:center;padding:20px;font-size:0.72rem;color:var(--neutral);font-family:'DM Mono',monospace;border-top:1px solid var(--border);}
+    @media(max-width:900px){.charts-grid{grid-template-columns:1fr;}.chart-full{grid-column:1;}header{padding:20px;flex-direction:column;align-items:flex-start;gap:8px;}main{padding:20px;}}
+  </style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>&#128202; Trade Analysis</h1>
+    <p>NIFTY &middot; BANKNIFTY &middot; FINNIFTY &mdash; Buy Trades Only</p>
+  </div>
+  <a href="index.html" style="font-family:'DM Mono',monospace;font-size:0.78rem;color:#fff;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);padding:8px 18px;border-radius:6px;text-decoration:none;letter-spacing:0.05em;" onmouseover="this.style.background='rgba(255,255,255,0.25)'" onmouseout="this.style.background='rgba(255,255,255,0.15)'">&#8592; Trade Log</a>
+</header>
+
+<div id="loader">
+  <div class="spinner"></div>
+  <p style="color:var(--neutral);font-size:0.85rem;">Loading analysis&hellip;</p>
+</div>
+
+<main id="main-content" style="display:none;">
+  <div class="charts-grid">
+
+    <!-- 1. Cumulative P&L — full width -->
+    <div class="chart-card chart-full">
+      <div class="chart-title">Cumulative Net P&amp;L Over Time</div>
+      <div class="chart-sub">Running total after each trade · charges deducted</div>
+      <div class="chart-wrap"><canvas id="cumulChart"></canvas></div>
+    </div>
+
+    <!-- 2. Monthly P&L Bar -->
+    <div class="chart-card">
+      <div class="chart-title">Monthly Net P&amp;L</div>
+      <div class="chart-sub">Net P&amp;L grouped by month</div>
+      <div class="chart-wrap-tall"><canvas id="monthChart"></canvas></div>
+    </div>
+
+    <!-- 3. Win/Loss Pie -->
+    <div class="chart-card">
+      <div class="chart-title">Win / Loss Ratio</div>
+      <div class="chart-sub">Based on Net P&amp;L per trade</div>
+      <div class="chart-wrap-tall"><canvas id="pieChart"></canvas></div>
+    </div>
+
+    <!-- 4. Instrument P&L Bar — full width -->
+    <div class="chart-card chart-full">
+      <div class="chart-title">Net P&amp;L by Instrument</div>
+      <div class="chart-sub">NIFTY vs BANKNIFTY vs FINNIFTY</div>
+      <div class="chart-wrap"><canvas id="instrChart"></canvas></div>
+    </div>
+
+  </div>
+</main>
+
+<footer>Data sourced live from Google Sheets &middot; All charges calculated per SEBI norms</footer>
+
+<script>
+const API = "https://script.google.com/macros/s/AKfycbxV4wCHyzdEsg__2ww6oMh0btrmVwDJH3n2E8haV6hMCLGWCJOJlcWtzgTrP0OHFl1W-Q/exec";
+const BROKERAGE = 40;
+
+function calcCharges(H, I, J) {
+  const stt    = Math.round((I * J) * 0.001);
+  const stamp  = Math.round((H * J) * 0.00003 * 100) / 100;
+  const excTxn = ((H + I) * J) * 0.0003503;
+  const sebi   = ((H + I) * J) * 0.000001;
+  const gst    = (BROKERAGE + excTxn + sebi) * 0.18;
+  const total  = BROKERAGE + stt + stamp + excTxn + sebi + gst;
+  return total;
+}
+
+function fmtINR(n) {
+  return '₹' + parseFloat(n).toLocaleString("en-IN", {minimumFractionDigits:0, maximumFractionDigits:0});
+}
+
+window.__analysisCallback = function(json) {
+  const rows = json.data;
+
+  // Filter taken trades only
+  const taken = rows
+    .filter(r => String(r["Trade Taken? (Yes/No)"]).trim().toLowerCase() === "yes")
+    .map(r => {
+      const H     = parseFloat(r["Actual Entry Price"]) || 0;
+      const I     = parseFloat(r["Actual Exit Price"])  || 0;
+      const J     = parseFloat(r["Lot Size"])           || 0;
+      const gross = (I - H) * J;
+      const chg   = calcCharges(H, I, J);
+      const net   = gross - chg;
+      const date  = new Date(r["Date"]);
+      const inst  = String(r["Instrument (e.g. NIFTY 22000 CE 28MAR)"]).toUpperCase();
+      let instrument = "NIFTY";
+      if (inst.includes("BANKNIFTY"))    instrument = "BANKNIFTY";
+      else if (inst.includes("FINNIFTY")) instrument = "FINNIFTY";
+      return { date, net, instrument };
+    })
+    .sort((a,b) => a.date - b.date);
+
+  // ── 1. Cumulative P&L ──
+  let cumul = 0;
+  const cumulLabels = taken.map(t => t.date.toLocaleDateString("en-IN",{day:"2-digit",month:"short"}));
+  const cumulData   = taken.map(t => { cumul += t.net; return Math.round(cumul); });
+  const cumulColors = cumulData.map(v => v >= 0 ? "#1E7D4B" : "#C0392B");
+
+  new Chart(document.getElementById("cumulChart"), {
+    type: "line",
+    data: {
+      labels: cumulLabels,
+      datasets: [{
+        label: "Cumulative Net P&L",
+        data: cumulData,
+        borderColor: "#3A6186",
+        backgroundColor: "rgba(58,97,134,0.08)",
+        borderWidth: 2.5,
+        pointBackgroundColor: cumulColors,
+        pointRadius: 5,
+        pointHoverRadius: 7,
+        fill: true,
+        tension: 0.3
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => fmtINR(ctx.parsed.y) } }
+      },
+      scales: {
+        y: { ticks: { callback: v => fmtINR(v) }, grid: { color: "#E8E5DC" } },
+        x: { grid: { display: false } }
+      }
+    }
+  });
+
+  // ── 2. Monthly P&L ──
+  const monthMap = {};
+  taken.forEach(t => {
+    const key = t.date.toLocaleDateString("en-IN",{month:"short",year:"2-digit"});
+    monthMap[key] = (monthMap[key] || 0) + t.net;
+  });
+  const monthLabels = Object.keys(monthMap);
+  const monthData   = Object.values(monthMap).map(v => Math.round(v));
+  const monthColors = monthData.map(v => v >= 0 ? "#1E7D4B" : "#C0392B");
+  const monthBgColors = monthData.map(v => v >= 0 ? "rgba(30,125,75,0.15)" : "rgba(192,57,43,0.15)");
+
+  new Chart(document.getElementById("monthChart"), {
+    type: "bar",
+    data: {
+      labels: monthLabels,
+      datasets: [{
+        label: "Monthly Net P&L",
+        data: monthData,
+        backgroundColor: monthBgColors,
+        borderColor: monthColors,
+        borderWidth: 2,
+        borderRadius: 6
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { label: ctx => fmtINR(ctx.parsed.y) } }
+      },
+      scales: {
+        y: { ticks: { callback: v => fmtINR(v) }, grid: { color: "#E8E5DC" } },
+        x: { grid: { display: false } }
+      }
+    }
+  });
+
+  // ── 3. Win/Loss Pie ──
+  const wins   = taken.filter(t => t.net > 0).length;
+  const losses = taken.filter(t => t.net <= 0).length;
+
+  new Chart(document.getElementById("pieChart"), {
+    type: "doughnut",
+    data: {
+      labels: ["Wins", "Losses"],
+      datasets: [{
+        data: [wins, losses],
+        backgroundColor: ["rgba(30,125,75,0.85)", "rgba(192,57,43,0.85)"],
+        borderColor: ["#1E7D4B", "#C0392B"],
+        borderWidth: 2,
+        hoverOffset: 8
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      cutout: "65%",
+      plugins: {
+        legend: {
+          position: "bottom",
+          labels: { font: { family: "'DM Mono', monospace", size: 11 }, padding: 16 }
+        },
+        tooltip: { callbacks: { label: ctx => ctx.label + ": " + ctx.parsed + " trades" } }
+      }
+    },
+    plugins: [{
+      id: "centerText",
+      beforeDraw(chart) {
+        const { width, height, ctx } = chart;
+        ctx.save();
+        const rate = taken.length ? ((wins/taken.length)*100).toFixed(1) : 0;
+        ctx.font = "bold 22px 'Syne', sans-serif";
+        ctx.fillStyle = wins >= losses ? "#1E7D4B" : "#C0392B";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(rate + "%", width/2, height/2 - 12);
+        ctx.font = "11px 'DM Mono', monospace";
+        ctx.fillStyle = "#6B6B6B";
+        ctx.fillText("win rate", width/2, height/2 + 12);
+        ctx.restore();
+      }
+    }]
+  });
+
+  // ── 4. Instrument P&L ──
+  const instrMap = { NIFTY: 0, BANKNIFTY: 0, FINNIFTY: 0 };
+  const instrCount = { NIFTY: 0, BANKNIFTY: 0, FINNIFTY: 0 };
+  taken.forEach(t => {
+    instrMap[t.instrument]   = (instrMap[t.instrument]   || 0) + t.net;
+    instrCount[t.instrument] = (instrCount[t.instrument] || 0) + 1;
+  });
+  const instrLabels = Object.keys(instrMap);
+  const instrData   = instrLabels.map(k => Math.round(instrMap[k]));
+  const instrColors = instrData.map(v => v >= 0 ? "rgba(30,125,75,0.15)" : "rgba(192,57,43,0.15)");
+  const instrBorders = instrData.map(v => v >= 0 ? "#1E7D4B" : "#C0392B");
+
+  new Chart(document.getElementById("instrChart"), {
+    type: "bar",
+    data: {
+      labels: instrLabels,
+      datasets: [{
+        label: "Net P&L",
+        data: instrData,
+        backgroundColor: instrColors,
+        borderColor: instrBorders,
+        borderWidth: 2,
+        borderRadius: 8
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => fmtINR(ctx.parsed.y),
+            afterLabel: ctx => instrCount[instrLabels[ctx.dataIndex]] + " trades"
+          }
+        }
+      },
+      scales: {
+        y: { ticks: { callback: v => fmtINR(v) }, grid: { color: "#E8E5DC" } },
+        x: { grid: { display: false }, ticks: { font: { family: "'DM Mono', monospace", size: 12 } } }
+      }
+    }
+  });
+
+  document.getElementById("loader").style.display = "none";
+  document.getElementById("main-content").style.display = "block";
+};
+
+(function() {
+  const s = document.createElement("script");
+  s.src = API + "?callback=__analysisCallback";
+  s.onerror = function() {
+    document.getElementById("loader").innerHTML =
+      '<p style="color:#C0392B;">Failed to load data. Check Apps Script deployment.</p>';
+  };
+  document.head.appendChild(s);
+  setTimeout(function() {
+    if (document.getElementById("loader").style.display !== "none") {
+      document.getElementById("loader").innerHTML =
+        '<p style="color:#C0392B;">Timeout. Ensure Apps Script access is set to Anyone.</p>';
+    }
+  }, 10000);
+})();
+</script>
+</body>
+</html>

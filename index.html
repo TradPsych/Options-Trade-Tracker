@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Options Trade Tracker</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
+  <style>
+    :root {
+      --bg:#F5F4F0; --surface:#ECEAE3; --steel:#3A6186; --steel-dark:#2B4A66;
+      --steel-light:#5B82A6; --profit:#1E7D4B; --profit-bg:#E8F5EE;
+      --loss:#C0392B; --loss-bg:#FDECEA; --neutral:#6B6B6B;
+      --text:#1A1A2E; --border:#D4D0C8; --shadow:0 2px 16px rgba(58,97,134,0.10);
+    }
+    *{box-sizing:border-box;margin:0;padding:0;}
+    body{font-family:'DM Sans',sans-serif;background:var(--bg);color:var(--text);min-height:100vh;}
+    header{background:var(--steel);padding:28px 40px 24px;display:flex;align-items:flex-end;justify-content:space-between;border-bottom:3px solid var(--steel-dark);}
+    header h1{font-family:'Syne',sans-serif;font-size:1.9rem;font-weight:800;color:#fff;letter-spacing:-0.5px;}
+    header p{font-size:0.78rem;color:rgba(255,255,255,0.65);font-family:'DM Mono',monospace;margin-top:4px;}
+    #last-updated{font-family:'DM Mono',monospace;font-size:0.72rem;color:rgba(255,255,255,0.55);text-align:right;}
+    #loader{display:flex;flex-direction:column;align-items:center;justify-content:center;height:60vh;gap:16px;}
+    .spinner{width:40px;height:40px;border:3px solid var(--border);border-top-color:var(--steel);border-radius:50%;animation:spin 0.8s linear infinite;}
+    @keyframes spin{to{transform:rotate(360deg);}}
+    main{padding:24px 20px 60px;max-width:100%;margin:0 auto;}
+    .dashboard{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:36px;}
+    .card{background:#fff;border:1px solid var(--border);border-radius:10px;padding:20px 22px;box-shadow:var(--shadow);transition:transform 0.18s;}
+    .card:hover{transform:translateY(-2px);}
+    .card-label{font-size:0.68rem;font-family:'DM Mono',monospace;text-transform:uppercase;letter-spacing:0.08em;color:var(--neutral);margin-bottom:8px;}
+    .card-value{font-family:'Syne',sans-serif;font-size:1.55rem;font-weight:700;color:var(--text);}
+    .card-value.profit{color:var(--profit);}
+    .card-value.loss{color:var(--loss);}
+    .card-sub{font-size:0.72rem;color:var(--neutral);margin-top:4px;}
+    .section-title{font-family:'Syne',sans-serif;font-size:1.1rem;font-weight:700;color:var(--steel-dark);margin-bottom:14px;padding-bottom:8px;border-bottom:2px solid var(--steel-light);display:flex;align-items:center;gap:10px;}
+    .section-title span{font-family:'DM Mono',monospace;font-size:0.72rem;font-weight:400;color:var(--neutral);}
+    .table-wrap{overflow-x:auto;border-radius:10px;box-shadow:var(--shadow);border:1px solid var(--border);}
+    table{width:100%;border-collapse:collapse;font-size:0.82rem;background:#fff;}
+    thead tr{background:var(--steel);color:#fff;}
+    thead th{padding:12px 14px;text-align:left;font-family:'DM Mono',monospace;font-size:0.68rem;font-weight:500;letter-spacing:0.05em;text-transform:uppercase;white-space:nowrap;border-right:1px solid rgba(255,255,255,0.1);}
+    thead th:last-child{border-right:none;}
+    tbody tr{border-bottom:1px solid var(--border);transition:background 0.12s;}
+    tbody tr:last-child{border-bottom:none;}
+    tbody tr:hover{background:var(--surface);}
+    tbody td{padding:10px 14px;white-space:nowrap;border-right:1px solid var(--border);color:var(--text);}
+    tbody td:last-child{border-right:none;}
+    .profit-cell{color:var(--profit);font-weight:500;background:var(--profit-bg);}
+    .loss-cell{color:var(--loss);font-weight:500;background:var(--loss-bg);}
+    .badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:0.68rem;font-family:'DM Mono',monospace;font-weight:500;}
+    .badge-target{background:var(--profit-bg);color:var(--profit);}
+    .badge-sl{background:var(--loss-bg);color:var(--loss);}
+    .badge-manual{background:#EEF2FF;color:#3730A3;}
+    .badge-no{background:#F3F4F6;color:#6B7280;}
+    .mono{font-family:'DM Mono',monospace;}
+    footer{text-align:center;padding:20px;font-size:0.72rem;color:var(--neutral);font-family:'DM Mono',monospace;border-top:1px solid var(--border);}
+    @media(max-width:768px){header{padding:20px;flex-direction:column;align-items:flex-start;gap:8px;}main{padding:20px;}.dashboard{grid-template-columns:repeat(2,1fr);}}
+  </style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>&#128200; Options Trade Tracker</h1>
+    <p>NIFTY &middot; BANKNIFTY &middot; FINNIFTY &mdash; Buy Trades Only</p>
+  </div>
+  <div style="display:flex;align-items:center;gap:16px;">
+    <a href="analysis.html" style="font-family:'DM Mono',monospace;font-size:0.78rem;color:#fff;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.3);padding:8px 18px;border-radius:6px;text-decoration:none;letter-spacing:0.05em;transition:background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.25)'" onmouseout="this.style.background='rgba(255,255,255,0.15)'">&#128202; Analysis</a>
+    <div id="last-updated">Loading&hellip;</div>
+  </div>
+</header>
+
+<div id="loader">
+  <div class="spinner"></div>
+  <p style="color:var(--neutral);font-size:0.85rem;">Fetching trade data&hellip;</p>
+</div>
+
+<main id="main-content" style="display:none;">
+  <div class="dashboard" id="dashboard"></div>
+  <div class="section-title">Trade Log <span id="trade-count"></span></div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Instrument</th>
+          <th>Taken?</th>
+          <th>Adv. Entry</th>
+          <th>Adv. SL</th>
+          <th>Adv. Target</th>
+          <th>Adv. Result</th>
+          <th>Actual Entry</th>
+          <th>Actual Exit</th>
+          <th>Lot Size</th>
+          <th>Gross P&amp;L</th>
+          <th>Total Charges</th>
+          <th>Net P&amp;L</th>
+          <th>Breakeven Pts</th>
+          <th>Notes</th>
+        </tr>
+      </thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+</main>
+
+<footer>Data sourced live from Google Sheets &middot; All charges calculated per SEBI norms &middot; Brokerage &#8377;40 round-trip</footer>
+
+<script>
+const API = "https://script.google.com/macros/s/AKfycbxV4wCHyzdEsg__2ww6oMh0btrmVwDJH3n2E8haV6hMCLGWCJOJlcWtzgTrP0OHFl1W-Q/exec";
+const BROKERAGE = 40;
+
+// ── Exact formulas as specified ──
+function calcCharges(H, I, J) {
+  const stt     = Math.round((I * J) * 0.001);
+  const stamp   = Math.round((H * J) * 0.00003 * 100) / 100;
+  const excTxn  = ((H + I) * J) * 0.0003503;
+  const sebi    = ((H + I) * J) * 0.000001;
+  const gst     = (BROKERAGE + excTxn + sebi) * 0.18;
+  const total   = BROKERAGE + stt + stamp + excTxn + sebi + gst;
+  const bep     = J > 0 ? total / J : 0;
+  return { stt, stamp, excTxn, sebi, gst, total, bep };
+}
+
+function fmt(n, d=2) {
+  if (n === null || n === undefined || n === "" || isNaN(n)) return "—";
+  return parseFloat(n).toLocaleString("en-IN", { minimumFractionDigits:d, maximumFractionDigits:d });
+}
+
+function fmtDate(d) {
+  if (!d) return "—";
+  const dt = new Date(d);
+  return isNaN(dt) ? d : dt.toLocaleDateString("en-IN", { day:"2-digit", month:"short", year:"numeric" });
+}
+
+function badge(r) {
+  if (!r) return '<span class="badge badge-no">—</span>';
+  const s = String(r).toLowerCase();
+  if (s.includes("target")) return '<span class="badge badge-target">'+r+'</span>';
+  if (s.includes("sl"))     return '<span class="badge badge-sl">'+r+'</span>';
+  if (s.includes("manual")) return '<span class="badge badge-manual">'+r+'</span>';
+  return '<span class="badge">'+r+'</span>';
+}
+
+function pnlCls(v) { return v > 0 ? "profit-cell" : v < 0 ? "loss-cell" : ""; }
+
+// ── JSONP callback ──
+window.__gsCallback = function(json) {
+  const rows = json.data;
+
+  // Sort newest first
+  rows.sort((a,b) => new Date(b["Date"]) - new Date(a["Date"]));
+
+  // Only "Yes" trades get calculations
+  const takenRows = rows.filter(r => String(r["Trade Taken? (Yes/No)"]).trim().toLowerCase() === "yes");
+
+  const processed = takenRows.map(r => {
+    const H = parseFloat(r["Actual Entry Price"]) || 0;
+    const I = parseFloat(r["Actual Exit Price"])  || 0;
+    const J = parseFloat(r["Lot Size"]) || 0;  // J = Lot Size directly
+    const gross    = (I - H) * J;  // Buy trade: Exit - Entry
+    const charges  = calcCharges(H, I, J);
+    const net      = gross - charges.total;
+    return { ...r, _H:H, _I:I, _J:J, _gross:gross, _charges:charges, _net:net };
+  });
+
+  // ── Dashboard ──
+  const totalNet   = processed.reduce((s,r) => s + r._net, 0);
+  const totalGross = processed.reduce((s,r) => s + r._gross, 0);
+  const totalChg   = processed.reduce((s,r) => s + r._charges.total, 0);
+  const wins       = processed.filter(r => r._net > 0).length;
+  const losses     = processed.filter(r => r._net < 0).length;
+  const winRate    = processed.length ? ((wins/processed.length)*100).toFixed(1) : 0;
+  const best       = processed.length ? Math.max(...processed.map(r=>r._net)) : 0;
+  const worst      = processed.length ? Math.min(...processed.map(r=>r._net)) : 0;
+
+  const cards = [
+    { label:"Net P&L",       value:"&#8377;"+fmt(totalNet),   cls: totalNet>=0?"profit":"loss",   sub: processed.length+" trades taken" },
+    { label:"Gross P&L",     value:"&#8377;"+fmt(totalGross), cls: totalGross>=0?"profit":"loss", sub:"Before charges" },
+    { label:"Total Charges", value:"&#8377;"+fmt(totalChg),   cls:"",                             sub:"STT+Stamp+Txn+SEBI+GST" },
+    { label:"Win Rate",      value:winRate+"%",               cls: parseFloat(winRate)>=50?"profit":"loss", sub:wins+"W / "+losses+"L" },
+    { label:"Best Trade",    value:"&#8377;"+fmt(best),       cls:"profit",                       sub:"Single trade" },
+    { label:"Worst Trade",   value:"&#8377;"+fmt(worst),      cls:"loss",                         sub:"Single trade" },
+  ];
+  document.getElementById("dashboard").innerHTML = cards.map(c =>
+    '<div class="card"><div class="card-label">'+c.label+'</div><div class="card-value '+c.cls+'">'+c.value+'</div><div class="card-sub">'+c.sub+'</div></div>'
+  ).join("");
+
+  // ── Build lookup ──
+  const lookup = {};
+  processed.forEach(r => { lookup[r["Date"]+"|"+r["Instrument (e.g. NIFTY 22000 CE 28MAR)"]] = r; });
+
+  // ── Table ──
+  let takenCount = 0;
+  document.getElementById("tbody").innerHTML = rows.map(r => {
+    const isTaken = String(r["Trade Taken? (Yes/No)"]).trim().toLowerCase() === "yes";
+    const key = r["Date"]+"|"+r["Instrument (e.g. NIFTY 22000 CE 28MAR)"];
+    const p = lookup[key];
+
+    let grossTd = '<td class="mono">—</td>';
+    let chargeTds = '<td class="mono">—</td>';
+    let netTd = '<td class="mono">—</td>';
+    let bepTd = '<td class="mono">—</td>';
+
+    if (isTaken && p) {
+      takenCount++;
+      grossTd  = '<td class="mono '+pnlCls(p._gross)+'">&#8377;'+fmt(p._gross)+'</td>';
+      chargeTds = '<td class="mono" style="font-weight:600;">&#8377;'+fmt(p._charges.total)+'</td>';
+      netTd    = '<td class="mono '+pnlCls(p._net)+'" style="font-weight:700;">&#8377;'+fmt(p._net)+'</td>';
+      bepTd    = '<td class="mono">'+fmt(p._charges.bep)+'</td>';
+    }
+
+    return '<tr>'
+      + '<td class="mono">'+fmtDate(r["Date"])+'</td>'
+      + '<td style="max-width:200px;white-space:normal;font-size:0.78rem;">'+(r["Instrument (e.g. NIFTY 22000 CE 28MAR)"]||"—")+'</td>'
+      + '<td>'+(isTaken?'<span class="badge badge-target">Yes</span>':'<span class="badge badge-no">No</span>')+'</td>'
+      + '<td class="mono">'+fmt(r["Advisory Entry"],1)+'</td>'
+      + '<td class="mono">'+fmt(r["Advisory SL"],1)+'</td>'
+      + '<td class="mono">'+fmt(r["Advisory Target"],1)+'</td>'
+      + '<td>'+badge(r["Advisory Result (SL/Target/Manual)"])+'</td>'
+      + '<td class="mono">'+(isTaken?fmt(r["Actual Entry Price"],2):"—")+'</td>'
+      + '<td class="mono">'+(isTaken?fmt(r["Actual Exit Price"],2):"—")+'</td>'
+      + '<td class="mono">'+(isTaken?(r["Lot Size"]||"—"):"—")+'</td>'
+      + grossTd + chargeTds + netTd + bepTd
+      + '<td style="max-width:180px;white-space:normal;font-size:0.75rem;color:var(--neutral);">'+(r["Notes"]||"")+'</td>'
+      + '</tr>';
+  }).join("");
+
+  document.getElementById("trade-count").textContent = takenCount+" trades executed";
+  document.getElementById("last-updated").textContent = "Last updated: "+new Date().toLocaleString("en-IN");
+  document.getElementById("loader").style.display = "none";
+  document.getElementById("main-content").style.display = "block";
+};
+
+// ── Load via JSONP (bypasses CORS) ──
+(function() {
+  const s = document.createElement("script");
+  s.src = API + "?callback=__gsCallback";
+  s.onerror = function() {
+    document.getElementById("loader").innerHTML =
+      '<p style="color:var(--loss);">Failed to load. Check Apps Script deployment.</p>';
+  };
+  document.head.appendChild(s);
+  setTimeout(function() {
+    if (document.getElementById("loader").style.display !== "none") {
+      document.getElementById("loader").innerHTML =
+        '<p style="color:var(--loss);">Timeout. Ensure Apps Script "Who has access" is set to Anyone.</p>';
+    }
+  }, 10000);
+})();
+</script>
+</body>
+</html>
